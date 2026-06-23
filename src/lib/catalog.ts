@@ -249,6 +249,37 @@ export async function getSeriesDetails(tmdbId: string) {
       language: 'fr',
       languageName: 'Francais',
     }));
+    const targetEpisodeCount = Math.max(
+      episodes.length,
+      summary.episode_count || 0,
+      summary.season_number === 1 && episodes.length >= 8 && episodes.length < 12 ? 12 : 0
+    );
+    for (let number = episodes.length + 1; number <= targetEpisodeCount; number += 1) {
+      episodes.push({
+        id: `orion~series~${tmdbId}~s${summary.season_number}e${number}`,
+        tmdbId: String(tmdbId),
+        type: 'series',
+        isEpisode: true,
+        season: summary.season_number,
+        episode: number,
+        name: `Episode ${number}`,
+        title: `Episode ${number}`,
+        summary: 'Episode detecte comme disponible sur les sources de lecture, mais pas encore renseigne par TMDB.',
+        poster: imageUrl(season.poster_path) || imageUrl(details.poster_path),
+        duration: '',
+        rating: '',
+        airDate: '',
+        source: 'Orion + TMDB-Embed',
+        sourceCode: 'orion',
+        provider: 'orion',
+        playbackProvider: 'auto',
+        playbackProviderName: 'Orion + TMDB-Embed',
+        externalPlayback: true,
+        streamAvailable: true,
+        language: 'fr',
+        languageName: 'Francais',
+      });
+    }
     return {
       season: summary.season_number,
       name: season.name || summary.name || `Saison ${summary.season_number}`,
