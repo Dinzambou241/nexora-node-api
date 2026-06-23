@@ -1,6 +1,11 @@
 import { getBrowser, preparePage, attachCollector, chooseBestM3U8, wait } from './puppeteer';
 import { CONFIG } from './config';
 
+
+const DEBUG_SCRAPER_LOGS = process.env.DEBUG_SCRAPER_LOGS === 'true';
+function debugLog(...args: unknown[]) {
+  if (DEBUG_SCRAPER_LOGS) console.log(...args);
+}
 const YABLOM_BASE = 'https://yablom.com/euvcw7/home/yablom';
 
 interface TmdbMovieInfo {
@@ -41,7 +46,7 @@ async function searchYablom(query: string) {
   await preparePage(page, ['yablom.com'], { blockAssets: true });
 
   try {
-    console.log(`  Recherche AETHER: ${query}`);
+    debugLog(`  Recherche AETHER: ${query}`);
     
     await page.goto(YABLOM_BASE, {
       waitUntil: 'domcontentloaded',
@@ -52,7 +57,7 @@ async function searchYablom(query: string) {
     // Chercher le champ de recherche
     const searchInput = await page.$('input[type="text"], input[name="search"], input[placeholder*="recherche"]');
     if (!searchInput) {
-      console.log('  ⚠️ Champ de recherche non trouvé sur Yablom');
+      debugLog('  ⚠️ Champ de recherche non trouvé sur Yablom');
       await page.close();
       return [];
     }
@@ -95,7 +100,7 @@ async function searchYablom(query: string) {
     await page.close();
     return results;
   } catch (e: any) {
-    console.log('  ❌ Erreur recherche Yablom:', e.message);
+    debugLog('  ❌ Erreur recherche Yablom:', e.message);
     try {
       await page.close();
     } catch {}
@@ -110,7 +115,7 @@ async function scrapeYablomMovie(movieUrl: string) {
   const collector = attachCollector(page);
 
   try {
-    console.log(`  Scraping AETHER: ${movieUrl}`);
+    debugLog(`  Scraping AETHER: ${movieUrl}`);
     
     await page.goto(movieUrl, {
       waitUntil: 'domcontentloaded',
@@ -140,7 +145,7 @@ async function scrapeYablomMovie(movieUrl: string) {
       return videoFrame ? (videoFrame as any).src : null;
     });
 
-    console.log(`  Embed trouvé: ${embedUrl || '❌'}`);
+    debugLog(`  Embed trouvé: ${embedUrl || '❌'}`);
 
     let m3u8 = chooseBestM3U8([...collector.m3u8s]);
 
@@ -153,13 +158,13 @@ async function scrapeYablomMovie(movieUrl: string) {
         await wait(CONFIG.TIMEOUTS.WAIT_FOR_M3U8);
         m3u8 = chooseBestM3U8([...collector.m3u8s]);
         if (m3u8) {
-          console.log('  ✅ M3U8 capté !');
+          debugLog('  ✅ M3U8 capté !');
           break;
         }
       }
 
       if (!m3u8) {
-        console.log('  ⚠️ M3U8 non trouvé, utilise embedUrl');
+        debugLog('  ⚠️ M3U8 non trouvé, utilise embedUrl');
       }
     }
 
@@ -167,7 +172,7 @@ async function scrapeYablomMovie(movieUrl: string) {
 
     return { embedUrl, m3u8 };
   } catch (e: any) {
-    console.log('  ❌ Erreur scraping:', e.message);
+    debugLog('  ❌ Erreur scraping:', e.message);
     try {
       await page.close();
     } catch {}
@@ -195,7 +200,7 @@ export interface AetherMovieSource {
 export async function getAetherMovieSource(tmdbId: string): Promise<AetherMovieSource> {
   const t0 = Date.now();
   const info = await getTmdbMovieInfo(tmdbId);
-  console.log(`\n[AETHER] ${info.titre_fr} (${info.annee})`);
+  debugLog(`\n[AETHER] ${info.titre_fr} (${info.annee})`);
 
   // Chercher d'abord avec le titre français
   let resultats = await searchYablom(info.titre_fr);
@@ -215,12 +220,12 @@ export async function getAetherMovieSource(tmdbId: string): Promise<AetherMovieS
   }
 
   const film = resultats[0]; // Prendre le premier résultat
-  console.log(`  Film: ${film.url}`);
+  debugLog(`  Film: ${film.url}`);
 
   const { embedUrl, m3u8 } = await scrapeYablomMovie(film.url);
 
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
-  console.log(`  AETHER RÉSULTAT: embed=${embedUrl ? '✅' : '❌'} m3u8=${m3u8 ? '✅' : '❌'} (${dt}s)`);
+  debugLog(`  AETHER RÉSULTAT: embed=${embedUrl ? '✅' : '❌'} m3u8=${m3u8 ? '✅' : '❌'} (${dt}s)`);
 
   if (!embedUrl && !m3u8) {
     return {

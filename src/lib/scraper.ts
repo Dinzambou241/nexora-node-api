@@ -2,6 +2,11 @@ import { getBrowser, preparePage, attachCollector, chooseBestM3U8, wait } from '
 import { getTmdbInfo } from './tmdb';
 import { CONFIG } from './config';
 
+
+const DEBUG_SCRAPER_LOGS = process.env.DEBUG_SCRAPER_LOGS === 'true';
+function debugLog(...args: unknown[]) {
+  if (DEBUG_SCRAPER_LOGS) console.log(...args);
+}
 function normalizeText(s: string): string {
   return (s || '')
     .toLowerCase()
@@ -34,7 +39,7 @@ export async function searchFrenchStreamWithPuppeteer(query: string): Promise<Se
     // Chercher le champ de recherche et entrer la requête
     const searchInput = await page.$('input#story, input[name="story"], input[placeholder*="Recherche"]');
     if (!searchInput) {
-      console.log('  ⚠️ Champ de recherche non trouvé');
+      debugLog('  ⚠️ Champ de recherche non trouvé');
       await page.close();
       return [];
     }
@@ -87,7 +92,7 @@ export async function searchFrenchStreamWithPuppeteer(query: string): Promise<Se
       titre: r.titre,
     }));
   } catch (e: any) {
-    console.log('  ❌ Erreur recherche:', e.message);
+    debugLog('  ❌ Erreur recherche:', e.message);
     try { await page.close(); } catch {}
     return [];
   }
@@ -102,7 +107,7 @@ export async function searchFrenchStream(query: string): Promise<SearchResult[]>
   }
 
   // Fallback sur l'ancienne méthode (probablement bloquée par Cloudflare)
-  console.log('  ℹ️ Tentative recherche AJAX directe...');
+  debugLog('  ℹ️ Tentative recherche AJAX directe...');
   const domain = CONFIG.FRENCH_STREAM_MAIN;
   
   try {
@@ -121,7 +126,7 @@ export async function searchFrenchStream(query: string): Promise<SearchResult[]>
 
     const html = await r.text();
     if (!html || html.length < 10 || html.includes('Verification')) {
-      console.log('  ⚠️ Recherche AJAX bloquée par Cloudflare');
+      debugLog('  ⚠️ Recherche AJAX bloquée par Cloudflare');
       return [];
     }
 
@@ -139,7 +144,7 @@ export async function searchFrenchStream(query: string): Promise<SearchResult[]>
 
     return res;
   } catch (e) {
-    console.log('  ❌ Recherche AJAX échouée');
+    debugLog('  ❌ Recherche AJAX échouée');
     return [];
   }
 }
@@ -213,11 +218,11 @@ async function clickPlayButton(page: any): Promise<boolean> {
     }, CONFIG.SELECTORS.PLAY_BUTTON);
 
     if (clicked) {
-      console.log('  ✅ Bouton PLAY cliqué');
+      debugLog('  ✅ Bouton PLAY cliqué');
       return true;
     }
 
-    console.log('  ⚠️ Bouton PLAY non trouvé');
+    debugLog('  ⚠️ Bouton PLAY non trouvé');
     return false;
   } catch {
     return false;
@@ -233,7 +238,7 @@ async function scrapeMovie(filmUrl: string): Promise<{ embedUrl: string | null; 
   const collector = attachCollector(page);
 
   try {
-    console.log('  Navigation vers:', filmUrl);
+    debugLog('  Navigation vers:', filmUrl);
     await page.goto(filmUrl, { waitUntil: 'domcontentloaded', timeout: CONFIG.TIMEOUTS.PAGE_LOAD }).catch(() => {});
     await wait(CONFIG.TIMEOUTS.WAIT_AFTER_LOAD);
 
@@ -245,7 +250,7 @@ async function scrapeMovie(filmUrl: string): Promise<{ embedUrl: string | null; 
     let domEmbeds = await scanDOMEmbeds(page, filmUrl);
     let embedUrl = domEmbeds[0] || [...collector.embeds][0] || null;
 
-    console.log('  Embed:', embedUrl || '❌');
+    debugLog('  Embed:', embedUrl || '❌');
 
     let m3u8 = chooseBestM3U8([...collector.m3u8s]);
 
@@ -258,25 +263,25 @@ async function scrapeMovie(filmUrl: string): Promise<{ embedUrl: string | null; 
         await wait(CONFIG.TIMEOUTS.WAIT_FOR_M3U8);
         m3u8 = chooseBestM3U8([...collector.m3u8s]);
         if (m3u8) {
-          console.log('  ✅ M3U8 capté !');
+          debugLog('  ✅ M3U8 capté !');
           break;
         }
       }
 
       // Si toujours pas de M3U8 après 5s, on retourne quand même l'embed
       if (!m3u8) {
-        console.log('  ⚠️ M3U8 non trouvé après timeout, utilise embedUrl comme fallback');
+        debugLog('  ⚠️ M3U8 non trouvé après timeout, utilise embedUrl comme fallback');
       }
     }
 
     try {
       await page.close();
     } catch {}
-    console.log(`  Page fermée (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+    debugLog(`  Page fermée (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 
     return { embedUrl, m3u8 };
   } catch (e: any) {
-    console.log('  Erreur:', e.message.slice(0, 80));
+    debugLog('  Erreur:', e.message.slice(0, 80));
     try {
       await page.close();
     } catch {}
@@ -303,7 +308,7 @@ export interface MovieSource {
 export async function getMovieSources(tmdbId: string): Promise<MovieSource> {
   const t0 = Date.now();
   const info = await getTmdbInfo(tmdbId);
-  console.log(`\n[MOVIE] ${info.titre_fr} (${info.annee})`);
+  debugLog(`\n[MOVIE] ${info.titre_fr} (${info.annee})`);
 
   let resultats = await searchFrenchStream(info.titre_fr);
   if (!resultats.length && info.titre_original !== info.titre_fr) {
@@ -315,11 +320,11 @@ export async function getMovieSources(tmdbId: string): Promise<MovieSource> {
     return { ok: false, erreur: 'Film non trouvé', titre: info.titre_fr };
   }
 
-  console.log('  Film:', film.url);
+  debugLog('  Film:', film.url);
 
   const { embedUrl, m3u8 } = await scrapeMovie(film.url);
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
-  console.log(`  RÉSULTAT: embed=${embedUrl ? '✅' : '❌'} m3u8=${m3u8 ? '✅' : '❌'} (${dt}s)`);
+  debugLog(`  RÉSULTAT: embed=${embedUrl ? '✅' : '❌'} m3u8=${m3u8 ? '✅' : '❌'} (${dt}s)`);
 
   if (!embedUrl && !m3u8) {
     return { ok: false, erreur: 'Rien trouvé', titre: info.titre_fr };

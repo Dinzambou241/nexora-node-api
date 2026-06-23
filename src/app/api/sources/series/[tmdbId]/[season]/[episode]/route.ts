@@ -7,6 +7,11 @@ import { eq, and, gt } from 'drizzle-orm';
 import { CONFIG } from '@/lib/config';
 import { corsJson, corsOptions } from '@/lib/cors';
 
+
+const DEBUG_SCRAPER_LOGS = process.env.DEBUG_SCRAPER_LOGS === 'true';
+function debugLog(...args: unknown[]) {
+  if (DEBUG_SCRAPER_LOGS) console.log(...args);
+}
 const CACHE_TTL = CONFIG.CACHE_TTL_MS;
 const AUTO_PROVIDER_TIMEOUT_MS = 35_000;
 
@@ -65,7 +70,7 @@ async function getAutoSeriesSource(tmdbId: string, season: number, episode: numb
   const errors: string[] = [];
   for (const provider of ['orion', 'tmdbembed'] as const) {
     try {
-      console.log(`[SERIES] provider auto -> ${provider} pour ${tmdbId} S${season}E${episode}`);
+      debugLog(`[SERIES] provider auto -> ${provider} pour ${tmdbId} S${season}E${episode}`);
       const data = await withProviderTimeout(
         provider,
         tmdbId,
@@ -131,11 +136,11 @@ export async function GET(
         .limit(1);
 
       if (cached.length > 0) {
-        console.log(`✅ Cache hit pour ${tmdbId} S${season}E${episode}`);
+        debugLog(`✅ Cache hit pour ${tmdbId} S${season}E${episode}`);
         return corsJson(cached[0].data);
       }
     } catch (dbError) {
-      console.log('Cache DB error (ignoré):', dbError);
+      debugLog('Cache DB error (ignoré):', dbError);
     }
 
     // Scraper les sources
@@ -167,7 +172,7 @@ export async function GET(
             },
           });
       } catch (dbError) {
-        console.log('Cache save error (ignoré):', dbError);
+        debugLog('Cache save error (ignoré):', dbError);
       }
     }
 

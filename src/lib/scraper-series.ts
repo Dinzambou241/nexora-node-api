@@ -1,6 +1,11 @@
 import { getBrowser, preparePage, attachCollector, chooseBestM3U8, wait } from './puppeteer';
 import { CONFIG } from './config';
 
+
+const DEBUG_SCRAPER_LOGS = process.env.DEBUG_SCRAPER_LOGS === 'true';
+function debugLog(...args: unknown[]) {
+  if (DEBUG_SCRAPER_LOGS) console.log(...args);
+}
 interface TmdbSeriesInfo {
   titre_fr: string;
   titre_original: string;
@@ -166,7 +171,7 @@ async function scrapeSeriesEpisode(
   const collector = attachCollector(page);
 
   try {
-    console.log('  Navigation vers série...');
+    debugLog('  Navigation vers série...');
     await page.goto(seriesUrl, {
       waitUntil: 'domcontentloaded',
       timeout: CONFIG.TIMEOUTS.PAGE_LOAD,
@@ -176,11 +181,11 @@ async function scrapeSeriesEpisode(
     // Récupérer l'embed actuel
     const oldEmbed = await getIframeEmbed(page);
     const oldId = getVidzyId(oldEmbed);
-    console.log(`  Embed actuel: ${oldId || 'aucun'}`);
+    debugLog(`  Embed actuel: ${oldId || 'aucun'}`);
 
     // Si épisode 1 et déjà chargé, pas besoin de cliquer
     if (episode !== 1 || !oldEmbed) {
-      console.log(`  Clic sur épisode ${episode}...`);
+      debugLog(`  Clic sur épisode ${episode}...`);
       const clicked = await clickEpisode(page, episode, side);
 
       if (clicked) {
@@ -193,7 +198,7 @@ async function scrapeSeriesEpisode(
           newEmbed = await getIframeEmbed(page);
           const newId = getVidzyId(newEmbed);
           if (newEmbed && newId !== oldId) {
-            console.log(`  ✅ Embed changé: ${newId}`);
+            debugLog(`  ✅ Embed changé: ${newId}`);
             break;
           }
         }
@@ -201,7 +206,7 @@ async function scrapeSeriesEpisode(
     }
 
     const finalEmbed = await getIframeEmbed(page);
-    console.log(`  Embed final: ${finalEmbed || '❌'}`);
+    debugLog(`  Embed final: ${finalEmbed || '❌'}`);
 
     let m3u8 = chooseBestM3U8([...collector.m3u8s]);
 
@@ -214,14 +219,14 @@ async function scrapeSeriesEpisode(
         await wait(CONFIG.TIMEOUTS.WAIT_FOR_M3U8);
         m3u8 = chooseBestM3U8([...collector.m3u8s]);
         if (m3u8) {
-          console.log('  ✅ M3U8 capté !');
+          debugLog('  ✅ M3U8 capté !');
           break;
         }
       }
 
       // Si toujours pas de M3U8, on retourne quand même l'embed
       if (!m3u8) {
-        console.log('  ⚠️ M3U8 non trouvé, utilise embedUrl comme fallback');
+        debugLog('  ⚠️ M3U8 non trouvé, utilise embedUrl comme fallback');
       }
     }
 
@@ -233,7 +238,7 @@ async function scrapeSeriesEpisode(
       lang: side === 'left' ? 'VF' : 'VOSTFR',
     };
   } catch (e: any) {
-    console.log('  Erreur scraping série:', e.message);
+    debugLog('  Erreur scraping série:', e.message);
     try {
       await page.close();
     } catch {}
@@ -266,7 +271,7 @@ export async function getSeriesSource(
 ): Promise<SeriesSource> {
   const t0 = Date.now();
   const info = await getTmdbSeriesInfo(tmdbId);
-  console.log(`\n[SERIES] ${info.titre_fr} S${season}E${episode}`);
+  debugLog(`\n[SERIES] ${info.titre_fr} S${season}E${episode}`);
 
   let resultats = await searchFrenchStreamSeries(info.titre_fr, season);
   if (!resultats.length && info.titre_original !== info.titre_fr) {
@@ -284,19 +289,19 @@ export async function getSeriesSource(
   }
 
   const serie = resultats[0];
-  console.log('  Série:', serie.url);
+  debugLog('  Série:', serie.url);
 
   // Essayer VF d'abord
   let res = await scrapeSeriesEpisode(serie.url, episode, 'left');
 
   // Si échec, essayer VOSTFR
   if (!res.embedUrl && !res.m3u8) {
-    console.log('  VF échoué, tentative VOSTFR...');
+    debugLog('  VF échoué, tentative VOSTFR...');
     res = await scrapeSeriesEpisode(serie.url, episode, 'right');
   }
 
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
-  console.log(`  RÉSULTAT: embed=${res.embedUrl ? '✅' : '❌'} m3u8=${res.m3u8 ? '✅' : '❌'} (${dt}s)`);
+  debugLog(`  RÉSULTAT: embed=${res.embedUrl ? '✅' : '❌'} m3u8=${res.m3u8 ? '✅' : '❌'} (${dt}s)`);
 
   if (!res.embedUrl && !res.m3u8) {
     return {
