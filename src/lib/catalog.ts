@@ -103,8 +103,8 @@ export async function getCatalogItems(type: CatalogType, options: {
   limit?: number;
   sort?: string;
 }) {
-  const limit = Math.min(Math.max(options.limit || 80, 1), 240);
-  const pages = Math.min(Math.ceil(limit / 20), 12);
+  const limit = Math.min(Math.max(options.limit || 120, 1), 600);
+  const pages = Math.min(Math.ceil(limit / 20), 30);
   const results: TmdbItem[] = [];
   const mediaType = type === 'movie' ? 'movie' : 'tv';
   const query = options.query?.trim();
@@ -118,7 +118,6 @@ export async function getCatalogItems(type: CatalogType, options: {
             ? (type === 'movie' ? 'primary_release_date.desc' : 'first_air_date.desc')
             : 'popularity.desc',
           watch_region: 'FR',
-          with_original_language: 'fr',
         });
 
     const response = await fetch(url, { next: { revalidate: 1800 } });
