@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const requestedType = searchParams.get('type') || 'movie';
     const type = requestedType === 'series' ? 'series' : 'movie';
-    const limit = Number(searchParams.get('limit') || '80');
+    const limit = Number(searchParams.get('limit') || '180');
     const query = searchParams.get('q') || '';
     const sort = searchParams.get('sort') || '';
 
