@@ -17,6 +17,24 @@ type TmdbItem = {
   adult?: boolean;
 };
 
+type TmdbSeasonSummary = {
+  season_number: number;
+  name?: string;
+  episode_count?: number;
+  poster_path?: string | null;
+};
+
+type TmdbEpisode = {
+  id: number;
+  episode_number: number;
+  name?: string;
+  overview?: string;
+  still_path?: string | null;
+  runtime?: number;
+  vote_average?: number;
+  air_date?: string;
+};
+
 type TmdbPage = {
   results?: TmdbItem[];
   total_pages?: number;
@@ -63,6 +81,10 @@ function yearFromDate(value?: string) {
   return value?.slice(0, 4) || '';
 }
 
+function imageUrl(path?: string | null, base = TMDB_IMAGE) {
+  return path ? `${base}${path}` : '';
+}
+
 function normalizeCatalogItem(item: TmdbItem, type: CatalogType, index: number) {
   const genres = type === 'movie' ? movieGenres : seriesGenres;
   const categoryName = genres.get(item.genre_ids?.[0] || 0) || (type === 'movie' ? 'Films FR' : 'Series FR');
@@ -78,9 +100,9 @@ function normalizeCatalogItem(item: TmdbItem, type: CatalogType, index: number) 
     description: item.overview || '',
     categoryId: `orion-french-${type}-${categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
     categoryName,
-    image: item.poster_path ? `${TMDB_IMAGE}${item.poster_path}` : '',
-    poster: item.poster_path ? `${TMDB_IMAGE}${item.poster_path}` : '',
-    backdrop: item.backdrop_path ? `${TMDB_BACKDROP}${item.backdrop_path}` : '',
+    image: imageUrl(item.poster_path),
+    poster: imageUrl(item.poster_path),
+    backdrop: imageUrl(item.backdrop_path, TMDB_BACKDROP),
     releaseYear: year,
     year,
     source: 'Orion + TMDB-Embed',
@@ -135,6 +157,14 @@ async function fetchTmdbPage(path: string, params: Record<string, string | numbe
   return response.json();
 }
 
+async function fetchTmdb<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
+  const response = await fetch(tmdbUrl(path, params), { next: { revalidate: 1800 } });
+  if (!response.ok) {
+    throw new Error(`TMDB request failed: ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function getCatalogItems(type: CatalogType, options: {
   query?: string;
   limit?: number;
@@ -185,4 +215,72 @@ export async function getCatalogItems(type: CatalogType, options: {
     .filter((item) => Boolean(item.poster_path && (item.title || item.name)))
     .slice(0, limit)
     .map((item, index) => normalizeCatalogItem(item, type, index));
+}
+
+export async function getSeriesDetails(tmdbId: string) {
+  const details = await fetchTmdb<any>(`/tv/${encodeURIComponent(tmdbId)}`);
+  const seasonSummaries = (details.seasons || [])
+    .filter((season: TmdbSeasonSummary) => season.season_number > 0 && (season.episode_count || 0) > 0);
+  const seasons = await Promise.all(seasonSummaries.map(async (summary: TmdbSeasonSummary) => {
+    const season = await fetchTmdb<any>(
+      `/tv/${encodeURIComponent(tmdbId)}/season/${summary.season_number}`
+    );
+    const episodes = ((season.episodes || []) as TmdbEpisode[]).map((episode) => ({
+      id: `orion~series~${tmdbId}~s${summary.season_number}e${episode.episode_number}`,
+      tmdbId: String(tmdbId),
+      type: 'series',
+      isEpisode: true,
+      season: summary.season_number,
+      episode: episode.episode_number,
+      name: episode.name || `Episode ${episode.episode_number}`,
+      title: episode.name || `Episode ${episode.episode_number}`,
+      summary: episode.overview || '',
+      poster: imageUrl(episode.still_path, TMDB_BACKDROP) || imageUrl(details.poster_path),
+      duration: episode.runtime ? `${episode.runtime} min` : '',
+      rating: episode.vote_average ? episode.vote_average.toFixed(1) : '',
+      airDate: episode.air_date || '',
+      source: 'Orion + TMDB-Embed',
+      sourceCode: 'orion',
+      provider: 'orion',
+      playbackProvider: 'auto',
+      playbackProviderName: 'Orion + TMDB-Embed',
+      externalPlayback: true,
+      streamAvailable: true,
+      language: 'fr',
+      languageName: 'Francais',
+    }));
+    return {
+      season: summary.season_number,
+      name: season.name || summary.name || `Saison ${summary.season_number}`,
+      episodeCount: episodes.length || summary.episode_count || 0,
+      poster: imageUrl(season.poster_path) || imageUrl(summary.poster_path) || imageUrl(details.poster_path),
+      episodes,
+    };
+  }));
+
+  return {
+    id: `orion~series~${tmdbId}`,
+    tmdbId: String(tmdbId),
+    type: 'series',
+    name: details.name || `Serie ${tmdbId}`,
+    title: details.name || `Serie ${tmdbId}`,
+    summary: details.overview || '',
+    categoryName: details.genres?.[0]?.name || 'Series',
+    poster: imageUrl(details.poster_path),
+    image: imageUrl(details.poster_path),
+    backdrop: imageUrl(details.backdrop_path, TMDB_BACKDROP),
+    releaseYear: yearFromDate(details.first_air_date),
+    seasonCount: seasons.length,
+    episodeCount: seasons.reduce((total, season) => total + (season.episodeCount || 0), 0),
+    seasons,
+    source: 'Orion + TMDB-Embed',
+    sourceCode: 'orion',
+    provider: 'orion',
+    playbackProvider: 'auto',
+    playbackProviderName: 'Orion + TMDB-Embed',
+    externalPlayback: true,
+    streamAvailable: true,
+    language: 'fr',
+    languageName: 'Francais',
+  };
 }
