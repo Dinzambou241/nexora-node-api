@@ -91,6 +91,29 @@ async function getAutoSeriesSource(tmdbId: string, season: number, episode: numb
     }
   }
 
+  try {
+    const fallback = await withProviderTimeout(
+      'tmdbembed',
+      tmdbId,
+      season,
+      episode,
+      getSeriesSourceByProvider(tmdbId, season, episode, 'tmdbembed', { allowNonFrench: true })
+    );
+    const hasFallbackSource = fallback.ok && fallback.hosters?.some((hoster: any) => (
+      hoster?.proxyM3U8 || hoster?.m3u8 || hoster?.directUrl || hoster?.embedUrl
+    ));
+    if (hasFallbackSource) {
+      (fallback as any).provider = 'tmdbembed';
+      (fallback as any).requiresLanguageConfirmation = true;
+      (fallback as any).languageWarning = (fallback as any).languageWarning
+        || 'Aucune version francaise detectee. Cette source peut etre en VO ou dans une autre langue.';
+      return fallback;
+    }
+    errors.push(`tmdbembed-nonfr: ${(fallback as any).erreur || 'aucune source'}`);
+  } catch (error: any) {
+    errors.push(`tmdbembed-nonfr: ${error?.message || 'erreur inconnue'}`);
+  }
+
   return {
     ok: false,
     erreur: `Aucune source VF trouvee (${errors.join(' ; ')})`,
