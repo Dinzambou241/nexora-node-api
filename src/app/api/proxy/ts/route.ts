@@ -37,11 +37,24 @@ export async function GET(request: NextRequest) {
       headers['Range'] = range;
     }
 
-    const r = await fetch(decodedUrl, {
-      headers,
-      cache: 'no-store',
-      signal: request.signal,
-    });
+    let r: Response | undefined;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        r = await fetch(decodedUrl, {
+          headers,
+          cache: 'no-store',
+          signal: AbortSignal.any([request.signal, AbortSignal.timeout(20_000)]),
+        });
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (request.signal.aborted || attempt === 2) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
+    if (!r) throw lastError || new Error('source indisponible');
 
     if (!r.ok && r.status !== 206) {
       return new NextResponse('Erreur: ' + r.status, { status: r.status, headers: corsHeaders });
@@ -77,6 +90,9 @@ export async function GET(request: NextRequest) {
       headers: responseHeaders,
     });
   } catch (e: any) {
-    return new NextResponse('Erreur: ' + e.message, { status: 500, headers: corsHeaders });
+    return new NextResponse('Source video indisponible: ' + e.message, {
+      status: 502,
+      headers: { ...corsHeaders, 'Retry-After': '2' },
+    });
   }
 }
