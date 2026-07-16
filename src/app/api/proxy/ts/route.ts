@@ -48,7 +48,6 @@ export async function GET(request: NextRequest) {
     }
 
     const ct = r.headers.get('content-type') || 'video/mp2t';
-    const cl = r.headers.get('content-length');
     const cr = r.headers.get('content-range');
 
     const responseHeaders: Record<string, string> = {
@@ -59,9 +58,10 @@ export async function GET(request: NextRequest) {
       'X-Accel-Buffering': 'no',
     };
 
-    if (cl) {
-      responseHeaders['Content-Length'] = cl;
-    }
+    // Do not forward the upstream Content-Length. Some HLS origins close the
+    // connection before sending the advertised number of bytes; forwarding
+    // that stale value makes browsers report ERR_CONTENT_LENGTH_MISMATCH.
+    // Leaving it unset lets Next.js stream the body without a false length.
     if (cr) {
       responseHeaders['Content-Range'] = cr;
     }
