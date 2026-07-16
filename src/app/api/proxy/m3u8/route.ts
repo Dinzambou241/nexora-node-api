@@ -15,15 +15,24 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const decodedUrl = decodeURIComponent(url);
-    const decodedRef = referer ? decodeURIComponent(referer) : 'https://vidzy.live/';
+    // URLSearchParams already decodes query parameters once. Decoding again
+    // corrupts signed CDN URLs containing escaped path or token characters.
+    const decodedUrl = url;
+    const decodedRef = referer || 'https://vidzy.live/';
+    const upstreamUrl = new URL(decodedUrl);
+    const refererUrl = new URL(decodedRef);
+    if (!['http:', 'https:'].includes(upstreamUrl.protocol)) {
+      return new NextResponse('protocole non autorise', { status: 400, headers: corsHeaders });
+    }
 
     const r = await fetch(decodedUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 Chrome/122.0.0.0',
         Referer: decodedRef,
-        Origin: new URL(decodedRef).origin,
+        Origin: refererUrl.origin,
       },
+      cache: 'no-store',
+      signal: request.signal,
     });
 
     if (!r.ok) {
@@ -45,7 +54,10 @@ export async function GET(request: NextRequest) {
       /URI=(["'])([^"']+)\1/gi,
       (match, quote: string, uri: string) => {
         if (/^(data:|blob:)/i.test(uri)) return match;
-        const proxied = isPlaylistUrl(uri) ? proxyPlaylist(uri) : proxyAsset(uri);
+        const tagUsesPlaylist = /^#EXT-X-(MEDIA|I-FRAME-STREAM-INF)/i.test(line);
+        const proxied = tagUsesPlaylist || isPlaylistUrl(uri)
+          ? proxyPlaylist(uri)
+          : proxyAsset(uri);
         return `URI=${quote}${proxied}${quote}`;
       }
     );
@@ -66,11 +78,17 @@ export async function GET(request: NextRequest) {
       return shouldProxyAsPlaylist ? proxyPlaylist(trimmed) : proxyAsset(trimmed);
     }).join('\n');
 
+    const isCompleteVod = /(?:^|\n)#EXT-X-ENDLIST(?:\r?\n|$)/i.test(text);
     return new NextResponse(rewritten, {
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/vnd.apple.mpegurl',
-        'Cache-Control': 'no-cache',
+        // La playlist doit rester fraîche, mais un court cache évite de
+        // refaire la même requête pour chaque client.
+        'Cache-Control': isCompleteVod
+          ? 'public, max-age=60, s-maxage=60'
+          : 'no-store, no-cache, must-revalidate',
+        'X-Accel-Buffering': 'no',
       },
     });
   } catch (e: any) {

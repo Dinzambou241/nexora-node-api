@@ -21,7 +21,8 @@ export const CONFIG = {
   },
   
   // Cache
-  CACHE_TTL_MS: 30 * 60 * 1000, // 30 minutes
+  // Stream URLs often contain short-lived CDN signatures.
+  CACHE_TTL_MS: 10 * 60 * 1000,
   
   // TMDB
   TMDB_API_KEY: '0cab5b92c32ddab1cd45f67d303c5dce',

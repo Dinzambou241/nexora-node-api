@@ -48,8 +48,16 @@ export default function VideoPlayer({ m3u8Url, embedUrl, title }: VideoPlayerPro
       const hls = new Hls({
         debug: false,
         enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 90,
+        // Films et séries = VOD : conserver un buffer plus stable plutôt
+        // que de privilégier la faible latence du direct.
+        lowLatencyMode: false,
+        backBufferLength: 60,
+        maxBufferLength: 45,
+        maxBufferSize: 60 * 1000 * 1000,
+        capLevelToPlayerSize: true,
+        startLevel: -1,
+        abrEwmaFastVoD: 3,
+        abrEwmaSlowVoD: 9,
       });
 
       hls.loadSource(m3u8Url);
@@ -95,7 +103,13 @@ export default function VideoPlayer({ m3u8Url, embedUrl, title }: VideoPlayerPro
     const video = videoRef.current;
     if (!video) return;
 
-    const updateTime = () => setCurrentTime(video.currentTime);
+    let lastTimeUpdate = 0;
+    const updateTime = () => {
+      const now = performance.now();
+      if (now - lastTimeUpdate < 250) return;
+      lastTimeUpdate = now;
+      setCurrentTime(video.currentTime);
+    };
     const updateDuration = () => setDuration(video.duration);
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
